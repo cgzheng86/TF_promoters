@@ -1,0 +1,134 @@
+---
+title: "modencode"
+output: html_document
+---
+# construct the granges file representing all HoxPbx binding sites
+```{r}
+TF_ConHPsites_pos <- read.csv("HoxPbxSites_in_TF_promoters.csv")
+TF_prom_granges <- read.csv("TF_promoters_granges_II.csv") 
+TF_prom_granges <- makeGRangesFromDataFrame(TF_prom_granges, keep.extra.columns = TRUE)
+elementMetadata(TF_prom_granges) <- elementMetadata(TF_prom_granges)[,c(2,3)]
+
+# construct granges for the binding sites
+new_grange <- TF_prom_granges[elementMetadata(TF_prom_granges)[,2] %in% TF_ConHPsites_pos$names[1],]
+start(new_grange) = start(new_grange) + TF_ConHPsites_pos$start[1] - 1 
+end(new_grange) = start(new_grange) + 9 
+TF_ConHPsites_granges <- new_grange
+for (i in 2:nrow(TF_ConHPsites_pos)) {
+    new_grange <- TF_prom_granges[elementMetadata(TF_prom_granges)[,2] %in% TF_ConHPsites_pos$names[i],]
+    if (as.character(strand(new_grange)) == "+") {
+        if (TF_ConHPsites_pos$direction[i] == "+") {
+            start(new_grange) = start(new_grange) + TF_ConHPsites_pos$start[i] - 1
+            end(new_grange) = start(new_grange) + 9 
+            TF_ConHPsites_granges <- append(TF_ConHPsites_granges, new_grange)    
+        } else if (TF_ConHPsites_pos$direction[i] == "-") {
+            start(new_grange) = end(new_grange) - TF_ConHPsites_pos$start[i] - 8
+            end(new_grange) = start(new_grange) + 9 
+            TF_ConHPsites_granges <- append(TF_ConHPsites_granges, new_grange)    
+        }
+    } 
+    if (as.character(strand(new_grange)) == "-") {
+        if (TF_ConHPsites_pos$direction[i] == "+") {
+            start(new_grange) = end(new_grange) - TF_ConHPsites_pos$start[i] - 8
+            end(new_grange) = start(new_grange) + 9 
+            TF_ConHPsites_granges <- append(TF_ConHPsites_granges, new_grange)    
+        } else if (TF_ConHPsites_pos$direction[i] == "-") {
+            start(new_grange) = start(new_grange) + TF_ConHPsites_pos$start[i] - 1
+            end(new_grange) = start(new_grange) + 9 
+            TF_ConHPsites_granges <- append(TF_ConHPsites_granges, new_grange)    
+        }
+    }
+}
+
+TF_ConHPsites_pos # 214
+TF_ConHPsites_granges # 214
+getSeq(Celegans, TF_ConHPsites_granges)
+```
+
+# write a function to get the ChIP seq data from modencode 
+```{r}
+library(GenomicFeatures)
+library(GenomicRanges)
+library(BSgenome)
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-2/4032_Snyder_LIN-39_GFP_L1.GFF3.gz", "lin39_L1")
+lin39_L1 <- ChIP("lin39_L1") # 8006 
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-2/4015_Snyder_LIN-39_GFP_L2.GFF3.gz", "lin39_L2")
+lin39_L2 <- ChIP("lin39_L2")
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-1/2432_Snyder_LIN-39-GFP_L3_combined_peaks.GFF3.gz", "lin39_L3")
+lin39_L3 <- ChIP("lin39_L3")
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-2/4016_Snyder_LIN-39_GFP_L4.GFF3.gz", "lin39_L4")
+lin39_L4 <- ChIP("lin39_L4") # only 141 columns with bad scores 
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-2/4016_Snyder_LIN-39_GFP_L4_Rep1.GFF3.gz", "lin39_L4_rep1")
+lin39_L4_rep1 <- ChIP("lin39_L1_rep1") # 3541
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-2/4016_Snyder_LIN-39_GFP_L4_Rep2.GFF3.gz", "lin39_L4_rep2")
+lin39_L4_rep2 <- ChIP("lin39_L1_rep2") # 1743
+lin39_L4 <- append(lin39_L4_rep1, lin39_L4_rep2)     
+    
+# ChIP function will take the raw data and convert to grange data
+ChIP <- function(raw_data_name) {
+    GFF_data <- readGFF(raw_data_name)
+    granges_data <- makeGRangesFromDataFrame(GFF_data, keep.extra.columns = TRUE)
+    chrStyle <- mapSeqlevels(seqlevels(granges_data),"UCSC")
+    granges_data <- renameSeqlevels(granges_data, chrStyle)    
+    return (granges_data)
+}
+```
+
+# find the overlap with LIN-39 ChIP
+```{r}
+# find the overlap between TF_ConHPsites_granges with lin39 ChIP data
+TF_ConHPsites_bound_by_LIN39_L1 <- subsetByOverlaps(TF_ConHPsites_granges, lin39_L1) 
+# 23 are bound by lin-39 at L1 stage
+TF_ConHPsites_bound_by_LIN39_L2 <- subsetByOverlaps(TF_ConHPsites_granges, lin39_L2) 
+# 5 are bound by lin-39 at L2 stage
+TF_ConHPsites_bound_by_LIN39_L3 <- subsetByOverlaps(TF_ConHPsites_granges, lin39_L3) 
+# 19 are bound by lin-39 at L3 stage
+TF_ConHPsites_bound_by_LIN39_L4 <- subsetByOverlaps(TF_ConHPsites_granges, lin39_L4) 
+# 16 are bound by lin-39 at L4 stage
+TF_ConHPsites_bound_by_LIN39 <- c(TF_ConHPsites_bound_by_LIN39_L1, TF_ConHPsites_bound_by_LIN39_L2, TF_ConHPsites_bound_by_LIN39_L3, TF_ConHPsites_bound_by_LIN39_L4) # 23 unique TFs are bound by LIN-39
+TF_ConHPsites_bound_by_LIN39$BoundBy <- c(rep("LIN-39_at_L1", 23), rep("LIN-39_at_L2", 5), rep("LIN-39_at_L3", 19), rep("LIN-39_at_L4", 16))
+write.csv(as.data.frame(sort(TF_ConHPsites_bound_by_LIN39)),"TF_ConHPsites_bound_by_LIN39.csv")
+```
+
+# downlaod ChIP data for mab-5
+```{r}
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-2/3840_Snyder_MAB-5_GFP_Emb_combined.GFF3.gz", "mab5_Emb")
+mab5_Emb <- ChIP("mab5_Emb") # 644
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-2/4639_Snyder_MAB-5_GFP_L2_combined.GFF3.gz", "mab5_L2")
+mab5_L2 <- ChIP("mab5_L2") # 2261
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-1/593_Snyder_MAB5_GFP_L3_combined_peaks.GFF3.gz", "mab5_L3")
+mab5_L3 <- ChIP("mab5_L3") # 4439 
+
+TF_ConHPsites_bound_by_MAB5_Emb <- subsetByOverlaps(TF_ConHPsites_granges, mab5_Emb)# 5
+TF_ConHPsites_bound_by_MAB5_L2 <- subsetByOverlaps(TF_ConHPsites_granges, mab5_L2) # 12
+TF_ConHPsites_bound_by_MAB5_L3 <- subsetByOverlaps(TF_ConHPsites_granges, mab5_L3) # 19
+TF_ConHPsites_bound_by_MAB5 <- c(TF_ConHPsites_bound_by_MAB5_Emb, TF_ConHPsites_bound_by_MAB5_L2, TF_ConHPsites_bound_by_MAB5_L3)
+TF_ConHPsites_bound_by_MAB5$BoundBy <- c(rep("MAB-5_at_Emb", 5), rep("MAB-5_at_L2", 12), rep("MAB-5_at_L3", 19))
+write.csv(as.data.frame(sort(TF_ConHPsites_bound_by_MAB5)),"TF_ConHPsites_bound_by_MAB5.csv")
+```
+
+Binding data with EGL-5
+```{r}
+download.file("ftp://data.modencode.org/all_files/cele-interpreted-1/3159_Snyder_EGL-5_GFP_L3_combined_peaks.GFF3.gz", "egl5_L3")
+egl5_L3 <- ChIP("egl5_L3")
+egl5_L3 # 4688
+TF_ConHPsites_bound_by_EGL5 <- subsetByOverlaps(TF_ConHPsites_granges, egl5_L3) # 13
+TF_ConHPsites_bound_by_EGL5$BoundBy <- rep("EGL-5_at_L3", 13)
+write.csv(as.data.frame(sort(TF_ConHPsites_bound_by_EGL5)),"TF_ConHPsites_bound_by_EGL5.csv")
+```
+
+Combine the data
+```{r}
+TF_ConHPsites_bound_by_HOX <- c(TF_ConHPsites_bound_by_LIN39,    TF_ConHPsites_bound_by_MAB5, TF_ConHPsites_bound_by_EGL5)
+write.csv(as.data.frame(sort(TF_ConHPsites_bound_by_HOX)),"TF_ConHPsites_bound_by_HOX.csv")
+
+TF_ConHPsites_granges # 214
+length(unique(TF_ConHPsites_granges$gene_name)) # 185
+TF_ConHPsites_bound_by_HOX # 112
+length(unique(TF_ConHPsites_bound_by_HOX$gene_name)) # 35
+length(unique(ranges(TF_ConHPsites_bound_by_HOX))) # 38
+```
+
+
+
+
