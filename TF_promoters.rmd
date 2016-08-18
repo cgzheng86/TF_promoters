@@ -1,0 +1,130 @@
+---
+title: "TF promoters"
+output: html_document
+---
+In this document, I am trying to summon a list of Transcription factors, find their promoter sequences, and look for Hox/Pbx binding sites (high affinity sites)
+
+```{r}
+setwd("./Google Drive/Github/TF_promoters")
+sheet1 <- read.xlsx("TF_list_from_Walhout.xlsx", sheetIndex = 1)
+TF_list1 <- sheet1[-1,2]
+sheet2 <- read.xlsx("TF_list_from_Walhout.xlsx", sheetIndex = 2)
+TF_list2 <- sheet2[-1,2]
+TF_list <- union(TF_list1, TF_list2)
+length(TF_list) # 921 TFs
+TF_ids <- xx_df[TF_list,1]
+TFs <- data.frame("TF_names" = TF_list, "Gene_id" = TF_ids)
+summary(TFs$Gene_id) # 119 NAs, meaning 119 NAs cannot be mapped to Entrez_gene_id
+TF_NAs <- TFs$TF_names[is.na(TFs$Gene_id)]
+TF_NAs <- as.character(TF_NAs) # 119
+write(TF_NAs, "TF_NAs.txt",sep = "\n") # search wormmine to find the gene names for these sequence names
+
+TF_NAs_identifiers <- read.csv("TF_NAs_identifiers.csv", header = FALSE)
+names(TF_NAs_identifiers) <- c("Gene_names","Sequence_names")
+TF_NAs_identifiers <- TF_NAs_identifiers[-1,]
+TF_NAs_identifiers[1:10,]
+nrow(TF_NAs_identifiers) # 104
+length(TF_NAs) # 119
+
+setdiff(TF_NAs, TF_NAs_identifiers$Sequence_names) # 16 including gei-3
+setdiff(TF_NAs_identifiers$Sequence_names,TFs) # T22H6.6 is gei-3
+
+# convert the columns of TFs to characters
+TFs$TF_names <- as.character(TFs$TF_names)
+TFs$Gene_id <- as.character(TFs$Gene_id)
+TF_NAs_identifiers$Sequence_names <- as.character(TF_NAs_identifiers$Sequence_names)
+TF_NAs_identifiers$Gene_names <- as.character(TF_NAs_identifiers$Gene_names)
+
+for (i in 1:nrow(TFs)) {
+    name <- TFs$TF_names[i]
+    if (name %in% TF_NAs_identifiers$Sequence_names) {
+        index <- TF_NAs_identifiers$Sequence_names == name
+        new_name <- TF_NAs_identifiers$Gene_names[index]
+        new_id <- xx_df[new_name,1]
+        TFs[i,] <- c(new_name, new_id)
+    }
+}
+sum(is.na(TFs$Gene_id)) # 16
+
+library(dplyr)
+filter(TFs, is.na(Gene_id))
+```
+
+
+Here are the 16 that still do not have Entrez_gene_id; manually found the correct gene name
+   TF_names Gene_id
+1   tag-347    <NA> spe-44
+2    attf-1    <NA> gmeb-3 
+3    ceh-26    <NA> pros-1
+4     gei-3    <NA> gei-3 # nhr-27 in NCBI; wrongly assigned
+5   C06A5.4    <NA> madf-7 
+6     psa-1    <NA> swsn-1
+7   cdc-5.L    <NA> cdc-5L
+8    gei-11    <NA> snpc-4
+9    pqn-47    <NA> myrf-1 
+10  C30G4.7    <NA> C30G4.4
+11   ztf-19    <NA> pat-9 
+12   ztf-12    <NA> sup-37
+13  tag-146    <NA> let-391 
+14  tag-233    <NA> dhhc-14
+15  tag-182    <NA> nfx-1
+16 Y38C9A.1    <NA> F56E10.1
+
+```{r}
+old_names <- filter(TFs, is.na(Gene_id))[,"TF_names"]
+new_names <- c("spe-44", "gmeb-3", "pros-1", "gei-3", "madf-7", "swsn-1", "cdc-5L", "snpc-4", "myrf-1", "C30G4.4", "pat-9", "sup-37", "let-391", "dhhc-14", "nfx-1", "F56E10.1")
+
+for (i in 1:nrow(TFs)) {
+    name <- TFs$TF_names[i]
+    if (name %in% old_names) {
+        index <- old_names == name
+        new_name <- new_names[index]
+        new_id <- xx_df[new_name,1]
+        TFs[i,] <- c(new_name, new_id)
+    }
+}
+
+sum(is.na(TFs$Gene_id)) # 2
+filter(TFs, is.na(Gene_id)) # gei-3 and madf-7; I will have to manually map them later
+```
+
+Get the position and sequences of the promoter sequences of these TFs
+
+```{r} 
+TFs <- TFs[complete.cases(TFs),] # gei-3 and madf-7 are removed
+nrow(TFs) # 919 (921 - 2)
+TF_promoter_granges <- up1000[up1000$gene_id == TFs[1,2]] 
+for (i in 2:nrow(TFs)) {
+    TF_promoter_granges <- append(TF_promoter_granges, up1000[up1000$gene_id == TFs$Gene_id[i]])
+}
+length(TF_promoter_granges) # 910
+setdiff(TFs$Gene_id,TF_promoter_granges$gene_id)
+# "190419" "190421" "190192" "188304" "181882" "191730" "188618" "191328" "191202" not found in up1000 
+
+score(TF_promoter_granges) = as.vector(sapply(TF_promoter_granges$gene_id, function(x) xx_df_2[xx_df_2$Entrez_gene_id == as.character(x),2]))
+names(values(TF_promoter_granges))[2] <- "gene_name"
+
+# manually add the other ones
+gei_3 <- GRanges(seqnames = Rle("chrII"), ranges = IRanges(12813948, end = 12814947, names = "gei-3"), strand = Rle("-"), gene_id = "none", gene_name = "gei-3")
+madf_7 <- GRanges(seqnames = Rle("chrI"), ranges = IRanges(5981589, end = 5982588, names = "madf-7"), strand = Rle("-"), gene_id = "none", gene_name = "madf-7") # pseudogene
+tbx_30 <- GRanges(seqnames = Rle("chrIV"), ranges = IRanges(5235522, end = 5236521, names = "190419"), strand = Rle("+"), gene_id = "190419", gene_name = "tbx-30")
+tbx_42 <- GRanges(seqnames = Rle("chrIV"), ranges = IRanges(5233876, end = 5234875, names = "190421"), strand = Rle("-"), gene_id = "190421", gene_name = "tbx-42")
+hsf_2 <- GRanges(seqnames = Rle("chrI"), ranges = IRanges(11969848, end = 11970848, names = "190192"), strand = Rle("-"), gene_id = "190192", gene_name = "hsf-2") # this is a pseudogene
+T08G5.7 <- GRanges(seqnames = Rle("chrV"), ranges = IRanges(14043374, end = 14044373, names = "188304"), strand = Rle("+"), gene_id = "188304", gene_name = "T08G5.7")
+B0250.4 <- GRanges(seqnames = Rle("chrV"), ranges = IRanges(20464487, end = 20465486, names = "181882"), strand = Rle("-"), gene_id = "181882", gene_name = "B0250.4") # considered a pseudogene
+nhr_83 <- GRanges(seqnames = Rle("chrV"), ranges = IRanges(631155, end = 632154, names = "191730"), strand = Rle("+"), gene_id = "191730", gene_name = "nhr-83") # pseudogene
+nhr_220 <- GRanges(seqnames = Rle("chrV"), ranges = IRanges(4884320, end = 4885319, names = "188618"), strand = Rle("-"), gene_id = "188618", gene_name = "nhr-220") # pseudogene
+nhr_250 <- GRanges(seqnames = Rle("chrV"), ranges = IRanges(611781, end = 612780, names = "191328"), strand = Rle("+"), gene_id = "191328", gene_name = "nhr-250") # pseudogene
+nhr_278 <- GRanges(seqnames = Rle("chrV"), ranges = IRanges(407265, end = 408264, names = "191202"), strand = Rle("+"), gene_id = "191202", gene_name = "nhr-278") # pseudogene    
+additional_TFs_granges <- c(gei_3, madf_7, tbx_30, tbx_42, hsf_2, T08G5.7, B0250.4, nhr_83, nhr_220, nhr_250, nhr_278)
+TF_promoter_granges_II <- append(TF_promoter_granges, additional_TFs_granges)
+
+length(TF_promoter_granges) # 910
+write.csv(as.data.frame(TF_promoter_granges),file = "TF_promoters_granges.csv",quote = FALSE)
+length(TF_promoter_granges_II) # 921 # include the additional 11 genes that are probably pseudogene
+write.csv(as.data.frame(TF_promoter_granges_II),file = "TF_promoters_granges_II.csv",quote = FALSE)
+
+TF_promoter_sequences <- getSeq(Celegans, TF_promoter_granges_II)
+write.table(as.data.frame(TF_promoter_sequences), file = "TF_promoter_sequences.txt", quote = FALSE)
+```
+

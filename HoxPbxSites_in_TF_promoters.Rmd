@@ -1,0 +1,73 @@
+---
+title: "TFprom_HoxPbx"
+output: html_document
+---
+Finding the HoxPbx sites in the TF promoters (upstream1000)
+
+```{r}
+# recover the sequence from the txt file
+df <- read.table("TF_promoter_sequences.txt")
+TF_promoter_sequences <- DNAStringSet(df$x)
+names(TF_promoter_sequences) <- rownames(df)
+
+HoxPbx_sites <- vmatchPattern("TGATNNATKR", TF_promoter_sequences, fixed = FALSE)
+HoxPbx_sites_found <- unlist(HoxPbx_sites) # 87 # IRanges
+length(unique(names(HoxPbx_sites_found))) # 83 unique names
+lengths <- sapply(HoxPbx_sites, length)
+lengths[lengths > 1] # these four have two sites
+# 176091 174005 182565 176870 
+#     2      2      2      2 
+HoxPbx_sites_rev <- vmatchPattern("TGATNNATKR", reverseComplement(TF_promoter_sequences), fixed = FALSE)
+HoxPbx_sites_rev_found <- unlist(HoxPbx_sites_rev) # 127
+intersect(unique(names(HoxPbx_sites_rev_found)), unique(names(HoxPbx_sites_found))) # only 13 are in common
+
+# put them together to generate a list
+TF_with_HoxPbxSites <- append(HoxPbx_sites_found, HoxPbx_sites_rev_found)
+TF_with_HoxPbxSites <- as.data.frame(TF_with_HoxPbxSites)
+TF_with_HoxPbxSites$direction <- c(rep("+", 87), rep("-", 127))    
+colnames(TF_with_HoxPbxSites)[4] <- c("gene_id")
+TF_with_HoxPbxSites$names <- as.vector(sapply(TF_with_HoxPbxSites$gene_id, function(x) xx_df_2[xx_df_2$Entrez_gene_id == as.character(x),2]))
+TF_with_HoxPbxSites$names[c(87,214)] <- c("madf-7", "madf-7")
+TF_with_HoxPbxSites$names <- unlist(TF_with_HoxPbxSites$names)
+write.csv(TF_with_HoxPbxSites, file = "HoxPbxSites_in_TF_promoters.csv", quote = FALSE)
+TF_with_HoxPbxSites_sort <- TF_with_HoxPbxSites[with(TF_with_HoxPbxSites, order(names, start)), ]
+write.csv(TF_with_HoxPbxSites_sort, file = "HoxPbxSites_in_TF_promoters_sort.csv", quote = FALSE)
+TF_site_counts <- data.frame(sort(table(TF_with_HoxPbxSites$names), decreasing = TRUE))
+colnames(TF_site_counts) <- "HoxPbx_sites_count"
+write.csv(TF_site_counts, "HoxPbxSites_in_TF_promoters_counts.csv")
+nrow(TF_site_counts)
+
+library(Biostrings)
+dna <- DNAString("TGATCCATGACCG")
+matchPattern("TGATNNATKR", dna, fixed = FALSE) # it matches to the right position
+# fixed = FALSE allows IUPAC ambiguity code: 
+# [G/T] = K (complement is M)
+# [G/A] = R (complement is Y)
+```
+
+# use less stringent sites "TGATNNATNN"
+```{r}
+HoxPbx_sites_liberal <- vmatchPattern("TGATNNATNN", TF_promoter_sequences, fixed = FALSE)
+HoxPbx_sites_liberal <- unlist(HoxPbx_sites_liberal)
+length(unique(names(HoxPbx_sites_liberal))) # 309
+HoxPbx_sites_liberal_rev <- vmatchPattern("TGATNNATNN", reverseComplement(TF_promoter_sequences), fixed = FALSE)
+HoxPbx_sites_liberal_rev <- unlist(HoxPbx_sites_liberal_rev)
+length(unique(names(HoxPbx_sites_liberal_rev))) # 328
+TF_with_liberal_HPsites <- union(unique(names(HoxPbx_sites_liberal)), unique(names(HoxPbx_sites_liberal_rev)))
+TF_with_liberal_HPsites <- as.data.frame(TF_with_liberal_HPsites)
+nrow(TF_with_liberal_HPsites) # 511
+colnames(TF_with_liberal_HPsites) <- "gene_id"
+TF_with_liberal_HPsites$names <- sapply(TF_with_liberal_HPsites$gene_id, function(x) xx_df_2[xx_df_2$Entrez_gene_id == as.character(x),2])
+TF_with_liberal_HPsites$names[308] <- c("madf-7")
+TF_with_liberal_HPsites$names <- unlist(TF_with_liberal_HPsites$names)
+write.csv(TF_with_liberal_HPsites[with(TF_with_liberal_HPsites, order(names, gene_id)), ], file = "TFs_with_liberal_HP_sites.csv", quote = FALSE)
+
+TF_with_LibHoxPbxSites <- append(HoxPbx_sites_liberal, HoxPbx_sites_liberal_rev)
+TF_with_LibHoxPbxSites <- as.data.frame(TF_with_LibHoxPbxSites) # 
+TF_with_LibHoxPbxSites$direction <- c(rep("+", 385), rep("-", 434))    
+colnames(TF_with_LibHoxPbxSites)[4] <- c("gene_id")
+TF_with_LibHoxPbxSites$names <- as.vector(sapply(TF_with_LibHoxPbxSites$gene_id, function(x) xx_df_2[xx_df_2$Entrez_gene_id == as.character(x),2]))
+TF_with_LibHoxPbxSites$names[c(383,815,816)] <- c("madf-7","madf-7","madf-7")
+TF_with_LibHoxPbxSites$names <- unlist(TF_with_LibHoxPbxSites$names)
+write.csv(TF_with_LibHoxPbxSites, file = "LiberalHoxPbxSites_in_TF_promoters.csv", quote = FALSE)
+```
